@@ -2,7 +2,7 @@
 # Scoop. Every few hours it reads the newest release (the nightly is a pre-release and is left out); when that is
 # newer than the formula, it fills the formula from scm-js's own recipe at that release's tag
 # (packaging/homebrew/scmjs.rb, by scripts/release-recipes.mjs, which reads the release's SHA256SUMS), installs it
-# from this tap and runs its test, then pushes it. Run it by hand to check the formula without a new release: it
+# from this tap and runs its test, then pushes it with the repository's deploy key. Run it by hand to check the formula without a new release: it
 # installs and tests the formula, and pushes only a newer version than the one it has.
 name: Update the formula
 
@@ -15,8 +15,10 @@ on:
         description: "A version to fill the formula for (default: the newest release)"
         required: false
 
+# The push goes over SSH with the repository's deploy key (the CI_BUILD_KEY secret), which the ruleset on main lets
+# through; the workflow's own token cannot push to a branch that needs pull requests, so it only reads.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: update-formula
@@ -101,7 +103,20 @@ jobs:
           brew test scm-js/tap/scmjs
           scmjs --version
 
-      # Only a newer release is pushed: a run by hand for the same or an older version installs and tests it, no more.
+      # Only a newer release is pushed: a run by hand for the same or an older version installs and tests it, and
+      # checks with a dry run that the deploy key can still push.
       - name: Push
-        if: steps.release.outputs.newer == 'true'
-        run: git push origin HEAD:main
+        if: steps.release.outputs.fill == 'true'
+        env:
+          CI_BUILD_KEY: ${{ secrets.CI_BUILD_KEY }}
+        run: |
+          key="$RUNNER_TEMP/ci_build_key"
+          printf '%s\n' "$CI_BUILD_KEY" > "$key"
+          chmod 600 "$key"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          if [ "${{ steps.release.outputs.newer }}" = true ]; then
+            git push git@github.com:scm-js/homebrew-tap.git HEAD:main
+          else
+            git push --dry-run git@github.com:scm-js/homebrew-tap.git HEAD:refs/heads/main
+          fi
+          rm -f "$key"
