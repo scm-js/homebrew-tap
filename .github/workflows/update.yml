@@ -1,0 +1,107 @@
+# Brings Formula/scmjs.rb up to the newest release of scm-js/scm-js, as the Scoop bucket's Excavator does for
+# Scoop. Every few hours it reads the newest release (the nightly is a pre-release and is left out); when that is
+# newer than the formula, it fills the formula from scm-js's own recipe at that release's tag
+# (packaging/homebrew/scmjs.rb, by scripts/release-recipes.mjs, which reads the release's SHA256SUMS), installs it
+# from this tap and runs its test, then pushes it. Run it by hand to check the formula without a new release: it
+# installs and tests the formula, and pushes only a newer version than the one it has.
+name: Update the formula
+
+on:
+  schedule:
+    - cron: "50 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "A version to fill the formula for (default: the newest release)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-formula
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ENV_HINTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: The newest release
+        id: release
+        env:
+          WANTED: ${{ inputs.version }}
+        run: |
+          current=$(sed -n 's/^  version "\(.*\)"$/\1/p' Formula/scmjs.rb)
+          if [ -n "$WANTED" ]; then
+            tag="v${WANTED#v}"
+          else
+            tag=$(gh release view --repo scm-js/scm-js --json tagName --jq .tagName)
+          fi
+          version=${tag#v}
+          echo "The formula has $current; the release is $version."
+          # A release whose command-line archives are not uploaded yet is left for the next run.
+          assets=$(gh release view "$tag" --repo scm-js/scm-js --json assets --jq '.assets[].name')
+          for f in SHA256SUMS scmjs-cli-macos-arm64.tar.gz scmjs-cli-macos-x64.tar.gz scmjs-cli-linux-x64.tar.gz; do
+            if ! grep -qx "$f" <<< "$assets"; then
+              echo "::notice::$tag has no $f yet; nothing to do until it does."
+              echo "fill=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          newer=false
+          if [ "$version" != "$current" ] && [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" = "$version" ]; then newer=true; fi
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "newer=$newer"
+            # On a schedule, only a newer release is worth the install; by hand, always.
+            if [ "$newer" = true ] || [ "${{ github.event_name }}" = workflow_dispatch ]; then echo "fill=true"; else echo "fill=false"; fi
+          } >> "$GITHUB_OUTPUT"
+
+      - name: The recipe at that release
+        if: steps.release.outputs.fill == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: scm-js/scm-js
+          ref: ${{ steps.release.outputs.tag }}
+          path: scm-js
+          sparse-checkout: |
+            packaging
+            scripts/release-recipes.mjs
+            scripts/lib/recipes.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Fill the formula
+        if: steps.release.outputs.fill == 'true'
+        run: |
+          (cd scm-js && node scripts/release-recipes.mjs "${{ steps.release.outputs.version }}" --out "$RUNNER_TEMP/recipes")
+          cp "$RUNNER_TEMP/recipes/homebrew/Formula/scmjs.rb" Formula/scmjs.rb
+          rm -rf scm-js
+          git diff --stat
+
+      - name: Install it from this tap and test it
+        if: steps.release.outputs.fill == 'true'
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git commit -q -am "scmjs ${{ steps.release.outputs.version }}"
+          fi
+          brew tap scm-js/tap "$GITHUB_WORKSPACE"
+          brew install scm-js/tap/scmjs
+          brew test scm-js/tap/scmjs
+          scmjs --version
+
+      # Only a newer release is pushed: a run by hand for the same or an older version installs and tests it, no more.
+      - name: Push
+        if: steps.release.outputs.newer == 'true'
+        run: git push origin HEAD:main
