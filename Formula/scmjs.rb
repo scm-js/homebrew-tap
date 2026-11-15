@@ -3,24 +3,24 @@
 class Scmjs < Formula
   desc "StarCraft: Brood War maps, replays and bots from the command line"
   homepage "https://docs.scmjs.dev/cli/"
-  version "0.14.0"
+  version "0.14.1"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/scm-js/scm-js/releases/download/v0.14.0/scmjs-cli-macos-arm64.tar.gz"
-      sha256 "722e7c3cce7137ab9c3a90d9363042982d57544a5bfeb3f483151568cb1579ce"
+      url "https://github.com/scm-js/scm-js/releases/download/v0.14.1/scmjs-cli-macos-arm64.tar.gz"
+      sha256 "3a03108d780c000c25165266562a25cda8e78016f6a997a2b5683a4688057a17"
     end
     on_intel do
-      url "https://github.com/scm-js/scm-js/releases/download/v0.14.0/scmjs-cli-macos-x64.tar.gz"
-      sha256 "899b6588b8e501b8fb6ad40bf75d3d30c97db1b73b84f9ee8f3d0e461c8c4859"
+      url "https://github.com/scm-js/scm-js/releases/download/v0.14.1/scmjs-cli-macos-x64.tar.gz"
+      sha256 "5d2438b0417287aa2086632523b4c2f197ae01d8aac3e1d11ea0841c7ea942df"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/scm-js/scm-js/releases/download/v0.14.0/scmjs-cli-linux-x64.tar.gz"
-      sha256 "62e3a165d0aef8a5a3aeb47150dad5e20770d5f49a18b132534097aa03156b18"
+      url "https://github.com/scm-js/scm-js/releases/download/v0.14.1/scmjs-cli-linux-x64.tar.gz"
+      sha256 "61fa38291d954041c93afc7ec2e12f1beda8bd704c929597facdc2a7e9196da8"
     end
   end
 
